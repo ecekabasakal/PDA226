@@ -231,8 +231,10 @@ class AlbumApp:
     def _build_left_panel(self, parent):
         ttk.Label(parent, text="JOURNAL ENTRY / MOOD", style="Heading.TLabel").pack(anchor="w", pady=(0, 6))
 
+        _j_box, _j_inner = self._make_rounded_box(parent, radius=10, pad=4)
+        _j_box.pack(fill="x")
         self._journal_text = tk.Text(
-            parent,
+            _j_inner,
             height=9,
             wrap="word",
             bg=styles.BG_CARD,
@@ -252,18 +254,24 @@ class AlbumApp:
         genres = ["Pop", "Rock", "Hip-Hop/Rap", "Electronic", "Indie",
                   "R&B/Soul", "Jazz", "Metal", "Türk Pop", "Klasik"]
         self._genre_var = tk.StringVar(value=genres[0])
-        ttk.Combobox(parent, textvariable=self._genre_var, values=genres,
+        _g_box, _g_inner = self._make_rounded_box(parent, radius=10, pad=4)
+        _g_box.pack(fill="x")
+        ttk.Combobox(_g_inner, textvariable=self._genre_var, values=genres,
                      state="readonly").pack(fill="x")
 
         ttk.Label(parent, text="ERA", style="Heading.TLabel").pack(anchor="w", pady=(12, 4))
         eras = ["1970s", "1980s", "1990s", "2000s", "2010s", "2020s"]
         self._era_var = tk.StringVar(value="2000s")
-        ttk.Combobox(parent, textvariable=self._era_var, values=eras,
+        _e_box, _e_inner = self._make_rounded_box(parent, radius=10, pad=4)
+        _e_box.pack(fill="x")
+        ttk.Combobox(_e_inner, textvariable=self._era_var, values=eras,
                      state="readonly").pack(fill="x")
 
         ttk.Label(parent, text="TRACK COUNT", style="Heading.TLabel").pack(anchor="w", pady=(12, 4))
         self._track_count_var = tk.IntVar(value=10)
-        ttk.Spinbox(parent, from_=6, to=14, textvariable=self._track_count_var,
+        _t_box, _t_inner = self._make_rounded_box(parent, radius=10, pad=4)
+        _t_box.pack(anchor="w")
+        ttk.Spinbox(_t_inner, from_=6, to=14, textvariable=self._track_count_var,
                     state="readonly", width=6).pack(anchor="w")
 
         ttk.Label(parent, text="", style="Panel.TLabel").pack()
@@ -290,18 +298,22 @@ class AlbumApp:
         top_row = tk.Frame(parent, bg=styles.BG_DARK)
         top_row.pack(fill="x", pady=(0, 18))
 
-        # Cover image — larger square
+        # Cover image — larger square with rounded canvas border
+        _cover_canvas = tk.Canvas(top_row, bg=styles.BG_DARK, highlightthickness=0, bd=0,
+                                   width=172, height=172)
+        _cover_canvas.pack(side="left", padx=(0, 20))
+        AlbumApp._draw_rr(_cover_canvas, 0, 0, 172, 172, 12,
+                           fill=styles.BG_PANEL, outline=styles.BG_PANEL)
         self._cover_label = tk.Label(
-            top_row,
+            _cover_canvas,
             text="Cover Art\nWill Appear Here",
             bg=styles.BG_PANEL,
             fg=styles.FG_SECONDARY,
             font=styles.FONT_BODY,
-            width=20,
-            height=10,
             relief="flat",
         )
-        self._cover_label.pack(side="left", padx=(0, 20))
+        _cover_canvas.create_window(6, 6, anchor="nw", window=self._cover_label,
+                                     width=160, height=160)
 
         # Metadata block
         meta = tk.Frame(top_row, bg=styles.BG_DARK)
@@ -352,8 +364,23 @@ class AlbumApp:
                  bg=styles.BG_DARK, fg=styles.FG_PRIMARY,
                  font=styles.FONT_HEADING).pack(side="left")
 
-        track_outer = tk.Frame(parent, bg=styles.BG_PANEL)
-        track_outer.pack(fill="both", expand=True)
+        _track_container = tk.Canvas(parent, bg=styles.BG_DARK, highlightthickness=0, bd=0)
+        _track_container.pack(fill="both", expand=True)
+        track_outer = tk.Frame(_track_container, bg=styles.BG_PANEL)
+        _tc_win = _track_container.create_window(6, 6, anchor="nw", window=track_outer)
+
+        def _draw_track_border(event=None):
+            cw = _track_container.winfo_width()
+            ch = _track_container.winfo_height()
+            if cw < 2 or ch < 2:
+                return
+            _track_container.delete("rr")
+            AlbumApp._draw_rr(_track_container, 0, 0, cw, ch, 12,
+                               fill=styles.BG_PANEL, outline=styles.BG_PANEL, tags="rr")
+            _track_container.tag_lower("rr")
+            _track_container.itemconfig(_tc_win, width=cw - 12, height=ch - 12)
+
+        _track_container.bind("<Configure>", _draw_track_border)
 
         self._track_canvas = tk.Canvas(
             track_outer, bg=styles.BG_PANEL,
@@ -399,6 +426,43 @@ class AlbumApp:
 
         text_widget.bind("<FocusIn>",  on_focus_in)
         text_widget.bind("<FocusOut>", on_focus_out)
+
+    @staticmethod
+    def _draw_rr(canvas, x1, y1, x2, y2, r, **kw):
+        canvas.create_arc(x1,       y1,       x1+2*r, y1+2*r, start=90,  extent=90,  **kw)
+        canvas.create_arc(x2-2*r,   y1,       x2,     y1+2*r, start=0,   extent=90,  **kw)
+        canvas.create_arc(x1,       y2-2*r,   x1+2*r, y2,     start=180, extent=90,  **kw)
+        canvas.create_arc(x2-2*r,   y2-2*r,   x2,     y2,     start=270, extent=90,  **kw)
+        canvas.create_rectangle(x1+r, y1,   x2-r, y2,   **kw)
+        canvas.create_rectangle(x1,   y1+r, x2,   y2-r, **kw)
+
+    def _make_rounded_box(self, parent, radius=10, pad=4, fill_color=None, canvas_bg=None):
+        fill_color = fill_color or styles.BG_CARD
+        canvas_bg  = canvas_bg  or styles.BG_PANEL
+        canvas = tk.Canvas(parent, bg=canvas_bg, highlightthickness=0, bd=0)
+        inner  = tk.Frame(canvas, bg=fill_color)
+        win    = canvas.create_window(pad, pad, anchor="nw", window=inner)
+
+        def _redraw():
+            cw, ch = canvas.winfo_width(), canvas.winfo_height()
+            if cw < 2 or ch < 2:
+                return
+            canvas.delete("rr")
+            AlbumApp._draw_rr(canvas, 0, 0, cw, ch, radius,
+                               fill=fill_color, outline=fill_color, tags="rr")
+            canvas.tag_lower("rr")
+
+        def _on_canvas_resize(event):
+            canvas.itemconfig(win, width=event.width - pad * 2)
+            _redraw()
+
+        def _on_inner_resize(event):
+            canvas.config(height=inner.winfo_reqheight() + pad * 2)
+            _redraw()
+
+        canvas.bind("<Configure>", _on_canvas_resize)
+        inner.bind("<Configure>", _on_inner_resize)
+        return canvas, inner
 
     def _on_inner_configure(self, _event=None):
         self._track_canvas.configure(scrollregion=self._track_canvas.bbox("all"))
