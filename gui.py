@@ -13,7 +13,7 @@ Public API (called by teammates):
     app.set_status(message)           -> None
     app.display_album(metadata,       -> None
                       tracks, image)
-    app.bind_generate(callback)       -> None   (connect Generate button)
+    app.bind_generate(callback)       -> None
 """
 
 import tkinter as tk
@@ -24,8 +24,74 @@ import styles
 
 
 # ---------------------------------------------------------------------------
-# AlbumApp
+# RoundedButton — Canvas-based button with rounded corners
 # ---------------------------------------------------------------------------
+
+class RoundedButton(tk.Canvas):
+    """A fully custom button with rounded corners drawn on a Canvas."""
+
+    def __init__(self, parent, text, command=None,
+                 bg=None, fg=None, hover_bg=None,
+                 font=None, radius=18, padx=20, pady=8,
+                 master_bg=None, **kwargs):
+        self._bg       = bg       or styles.ACCENT_GREEN
+        self._fg       = fg       or styles.BG_DARK
+        self._hover_bg = hover_bg or styles.ACCENT_GREEN_HOVER
+        self._font     = font     or styles.FONT_LABEL
+        self._radius   = radius
+        self._padx     = padx
+        self._pady     = pady
+        self._command  = command
+        self._text     = text
+
+        # Measure text size using tkinter font module
+        import tkinter.font as tkfont
+        f = tkfont.Font(family=self._font[0], size=self._font[1],
+                        weight=self._font[2] if len(self._font) > 2 else "normal")
+        self._btn_w = int(f.measure(text)) + padx * 2
+        self._btn_h = int(f.metrics("linespace")) + pady * 2
+
+        super().__init__(parent,
+                         width=self._btn_w, height=self._btn_h,
+                         highlightthickness=0, bd=0,
+                         bg=master_bg or styles.BG_PANEL,
+                         **kwargs)
+
+        self._draw(self._bg)
+
+        self.bind("<Enter>",           self._on_enter)
+        self.bind("<Leave>",           self._on_leave)
+        self.bind("<ButtonPress-1>",   self._on_press)
+        self.bind("<ButtonRelease-1>", self._on_release)
+
+    def _round_rect(self, x1, y1, x2, y2, r, **kw):
+        self.create_arc(x1,       y1,       x1+2*r,   y1+2*r,   start=90,  extent=90,  **kw)
+        self.create_arc(x2-2*r,   y1,       x2,       y1+2*r,   start=0,   extent=90,  **kw)
+        self.create_arc(x1,       y2-2*r,   x1+2*r,   y2,       start=180, extent=90,  **kw)
+        self.create_arc(x2-2*r,   y2-2*r,   x2,       y2,       start=270, extent=90,  **kw)
+        self.create_rectangle(x1+r, y1,   x2-r, y2,   **kw)
+        self.create_rectangle(x1,   y1+r, x2,   y2-r, **kw)
+
+    def _draw(self, bg_color):
+        self.delete("all")
+        self._round_rect(0, 0, self._btn_w, self._btn_h, self._radius,
+                         fill=bg_color, outline=bg_color)
+        self.create_text(self._btn_w // 2, self._btn_h // 2,
+                         text=self._text, fill=self._fg, font=self._font)
+
+    def _on_enter(self, _e):   self._draw(self._hover_bg)
+    def _on_leave(self, _e):   self._draw(self._bg)
+    def _on_press(self, _e):   self._draw(self._hover_bg)
+    def _on_release(self, _e):
+        self._draw(self._bg)
+        if self._command:
+            self._command()
+
+    def configure(self, **kwargs):
+        if "command" in kwargs:
+            self._command = kwargs.pop("command")
+        super().configure(**kwargs)
+
 
 class AlbumApp:
     """Root application window for Album Cover Studio."""
@@ -37,8 +103,8 @@ class AlbumApp:
         self.root.geometry("1150x720")
         self.root.minsize(900, 600)
 
-        self._current_image = None   # Holds PhotoImage ref to prevent GC
-        self._track_widgets  = []    # Track row widget references
+        self._current_image = None
+        self._track_widgets  = []
 
         self._setup_style()
         self._build_ui()
@@ -48,11 +114,9 @@ class AlbumApp:
     # ------------------------------------------------------------------
 
     def _setup_style(self):
-        """Apply a dark 'clam' ttk theme using the color constants in styles.py."""
         s = ttk.Style(self.root)
         s.theme_use("clam")
 
-        # Global defaults
         s.configure(".",
                     background=styles.BG_DARK,
                     foreground=styles.FG_PRIMARY,
@@ -63,16 +127,14 @@ class AlbumApp:
                     selectforeground=styles.BG_DARK,
                     font=styles.FONT_BODY)
 
-        # Frames
         s.configure("TFrame",        background=styles.BG_DARK)
         s.configure("Panel.TFrame",  background=styles.BG_PANEL)
         s.configure("Card.TFrame",   background=styles.BG_CARD)
 
-        # Labels
         s.configure("TLabel",        background=styles.BG_DARK,  foreground=styles.FG_PRIMARY,   font=styles.FONT_BODY)
         s.configure("Panel.TLabel",  background=styles.BG_PANEL, foreground=styles.FG_PRIMARY,   font=styles.FONT_BODY)
         s.configure("Title.TLabel",  background=styles.BG_PANEL, foreground=styles.FG_PRIMARY,   font=styles.FONT_TITLE)
-        s.configure("Heading.TLabel",background=styles.BG_PANEL, foreground=styles.FG_PRIMARY,   font=styles.FONT_HEADING)
+        s.configure("Heading.TLabel",background=styles.BG_PANEL, foreground=styles.ACCENT_GREEN, font=styles.FONT_HEADING)
         s.configure("Meta.TLabel",   background=styles.BG_CARD,  foreground=styles.FG_SECONDARY, font=styles.FONT_BODY)
         s.configure("Status.TLabel", background=styles.BG_PANEL, foreground=styles.FG_SECONDARY, font=styles.FONT_SMALL)
 
@@ -82,28 +144,30 @@ class AlbumApp:
                     foreground=styles.BG_DARK,
                     font=styles.FONT_LABEL,
                     borderwidth=0,
-                    padding=(10, 8))
+                    relief="flat",
+                    padding=(14, 10))
         s.map("Accent.TButton",
               background=[("active", styles.ACCENT_GREEN_HOVER), ("pressed", styles.ACCENT_GREEN)],
-              foreground=[("active", styles.BG_DARK)])
+              foreground=[("active", styles.FG_PRIMARY)])
 
-        # Listen button (small, outlined feel)
+        # Listen button
         s.configure("Listen.TButton",
-                    background=styles.BG_PANEL,
+                    background=styles.ACCENT_GREEN_HOVER,
                     foreground=styles.ACCENT_GREEN,
-                    font=styles.FONT_SMALL,
-                    borderwidth=1,
-                    padding=(4, 2))
+                    font=styles.FONT_BODY,
+                    borderwidth=0,
+                    relief="flat",
+                    padding=(10, 5))
         s.map("Listen.TButton",
               background=[("active", styles.BG_CARD)],
-              foreground=[("active", styles.ACCENT_GREEN_HOVER)])
+              foreground=[("active", styles.ACCENT_GREEN)])
 
         # Combobox
         s.configure("TCombobox",
                     fieldbackground=styles.BG_CARD,
                     background=styles.BG_CARD,
                     foreground=styles.FG_PRIMARY,
-                    arrowcolor=styles.FG_SECONDARY,
+                    arrowcolor=styles.ACCENT_GREEN,
                     bordercolor=styles.BORDER_COLOR,
                     lightcolor=styles.BG_CARD,
                     darkcolor=styles.BG_CARD)
@@ -117,44 +181,46 @@ class AlbumApp:
                     fieldbackground=styles.BG_CARD,
                     background=styles.BG_CARD,
                     foreground=styles.FG_PRIMARY,
-                    arrowcolor=styles.FG_SECONDARY,
+                    arrowcolor=styles.ACCENT_GREEN,
                     bordercolor=styles.BORDER_COLOR)
 
         # Scrollbar
         s.configure("TScrollbar",
-                    background=styles.BG_PANEL,
-                    troughcolor=styles.BG_DARK,
-                    arrowcolor=styles.FG_SECONDARY,
-                    bordercolor=styles.BG_PANEL)
+                    background=styles.BG_CARD,
+                    troughcolor=styles.BG_PANEL,
+                    arrowcolor=styles.BG_PANEL,
+                    bordercolor=styles.BG_PANEL,
+                    relief="flat")
 
     # ------------------------------------------------------------------
     # UI construction
     # ------------------------------------------------------------------
 
     def _build_ui(self):
-        """Assemble the title bar and the two-panel content area."""
         # Title bar
         title_bar = ttk.Frame(self.root, style="Panel.TFrame", padding=(20, 14))
         title_bar.pack(fill="x")
-        ttk.Label(title_bar, text="Album Cover Studio", style="Title.TLabel").pack(side="left")
 
-        # Thin horizontal rule beneath title
+        # Green accent line left of title
+        title_inner = tk.Frame(title_bar, bg=styles.BG_PANEL)
+        title_inner.pack(side="left")
+        tk.Frame(title_inner, bg=styles.ACCENT_GREEN, width=3, height=24).pack(side="left", padx=(0, 10))
+        tk.Label(title_inner, text="Album Cover Studio",
+                 bg=styles.BG_PANEL, fg=styles.FG_PRIMARY,
+                 font=styles.FONT_TITLE).pack(side="left")
+
         tk.Frame(self.root, bg=styles.BORDER_COLOR, height=1).pack(fill="x")
 
-        # Content row
         content = ttk.Frame(self.root, style="TFrame")
         content.pack(fill="both", expand=True)
 
-        # Left panel — fixed width
         left = ttk.Frame(content, style="Panel.TFrame", padding=(20, 20), width=300)
         left.pack(side="left", fill="y")
         left.pack_propagate(False)
 
-        # Vertical rule
         tk.Frame(content, bg=styles.BORDER_COLOR, width=1).pack(side="left", fill="y")
 
-        # Right panel — expands
-        right = ttk.Frame(content, style="Panel.TFrame", padding=(24, 20))
+        right = ttk.Frame(content, style="TFrame", padding=(24, 20))
         right.pack(side="left", fill="both", expand=True)
 
         self._build_left_panel(left)
@@ -163,17 +229,14 @@ class AlbumApp:
     # --- Left panel ---
 
     def _build_left_panel(self, parent):
-        """Journal input, genre/era/track-count controls, generate button, status."""
-
-        # Journal entry
-        ttk.Label(parent, text="Journal Entry / Mood", style="Heading.TLabel").pack(anchor="w", pady=(0, 6))
+        ttk.Label(parent, text="JOURNAL ENTRY / MOOD", style="Heading.TLabel").pack(anchor="w", pady=(0, 6))
 
         self._journal_text = tk.Text(
             parent,
             height=9,
             wrap="word",
             bg=styles.BG_CARD,
-            fg=styles.FG_SECONDARY,        # starts at placeholder colour
+            fg=styles.FG_SECONDARY,
             insertbackground=styles.FG_PRIMARY,
             relief="flat",
             font=styles.FONT_BODY,
@@ -185,105 +248,116 @@ class AlbumApp:
         self._journal_text.pack(fill="x")
         self._install_placeholder(self._journal_text, "Describe your mood, day, or feelings…")
 
-        # Genre
-        ttk.Label(parent, text="Genre", style="Heading.TLabel").pack(anchor="w", pady=(16, 4))
+        ttk.Label(parent, text="GENRE", style="Heading.TLabel").pack(anchor="w", pady=(16, 4))
         genres = ["Pop", "Rock", "Hip-Hop/Rap", "Electronic", "Indie",
                   "R&B/Soul", "Jazz", "Metal", "Türk Pop", "Klasik"]
         self._genre_var = tk.StringVar(value=genres[0])
         ttk.Combobox(parent, textvariable=self._genre_var, values=genres,
                      state="readonly").pack(fill="x")
 
-        # Era
-        ttk.Label(parent, text="Era", style="Heading.TLabel").pack(anchor="w", pady=(12, 4))
+        ttk.Label(parent, text="ERA", style="Heading.TLabel").pack(anchor="w", pady=(12, 4))
         eras = ["1970s", "1980s", "1990s", "2000s", "2010s", "2020s"]
         self._era_var = tk.StringVar(value="2000s")
         ttk.Combobox(parent, textvariable=self._era_var, values=eras,
                      state="readonly").pack(fill="x")
 
-        # Track count
-        ttk.Label(parent, text="Track Count", style="Heading.TLabel").pack(anchor="w", pady=(12, 4))
+        ttk.Label(parent, text="TRACK COUNT", style="Heading.TLabel").pack(anchor="w", pady=(12, 4))
         self._track_count_var = tk.IntVar(value=10)
         ttk.Spinbox(parent, from_=6, to=14, textvariable=self._track_count_var,
                     state="readonly", width=6).pack(anchor="w")
 
-        # Spacer
         ttk.Label(parent, text="", style="Panel.TLabel").pack()
 
-        # Generate button
-        self._generate_btn = ttk.Button(parent, text="Generate Album", style="Accent.TButton")
+        self._generate_btn = RoundedButton(
+            parent, text="Generate Album",
+            bg=styles.ACCENT_GREEN,
+            fg=styles.BG_DARK,
+            hover_bg="#0d9e6e",
+            font=styles.FONT_LABEL,
+            radius=18, padx=30, pady=10,
+            master_bg=styles.BG_PANEL,
+        )
         self._generate_btn.pack(fill="x", pady=(12, 0))
 
-        # Status label
-        self._status_var = tk.StringVar(value="Ready.")
+        self._status_var = tk.StringVar(value="✓ Ready.")
         ttk.Label(parent, textvariable=self._status_var,
                   style="Status.TLabel", wraplength=260).pack(anchor="w", pady=(8, 0))
 
     # --- Right panel ---
 
     def _build_right_panel(self, parent):
-        """Cover image + metadata row, followed by the scrollable tracklist."""
-
-        # ── Top row: cover image  +  metadata ──────────────────────────
-        top_row = ttk.Frame(parent, style="Panel.TFrame")
+        # ── Top row: cover image + metadata ──
+        top_row = tk.Frame(parent, bg=styles.BG_DARK)
         top_row.pack(fill="x", pady=(0, 18))
 
-        # Cover image placeholder
-        img_outer = tk.Frame(top_row, bg=styles.BG_CARD, padx=2, pady=2)
-        img_outer.pack(side="left", padx=(0, 20))
-
+        # Cover image — larger square
         self._cover_label = tk.Label(
-            img_outer,
+            top_row,
             text="Cover Art\nWill Appear Here",
-            bg=styles.BG_CARD,
+            bg=styles.BG_PANEL,
             fg=styles.FG_SECONDARY,
             font=styles.FONT_BODY,
-            width=22,
-            height=11,
+            width=20,
+            height=10,
             relief="flat",
         )
-        self._cover_label.pack()
+        self._cover_label.pack(side="left", padx=(0, 20))
 
-        # Metadata card
-        meta_card = ttk.Frame(top_row, style="Card.TFrame", padding=(16, 14))
-        meta_card.pack(side="left", fill="both", expand=True)
+        # Metadata block
+        meta = tk.Frame(top_row, bg=styles.BG_DARK)
+        meta.pack(side="left", fill="both", expand=True)
 
-        # Album name (large)
+        # "AI CURATED PLAYLIST" label
+        tk.Label(meta, text="AI CURATED PLAYLIST",
+                 bg=styles.BG_DARK, fg=styles.ACCENT_GREEN,
+                 font=styles.FONT_SMALL).pack(anchor="w")
+
+        # Album name
         self._album_name_var = tk.StringVar(value="—")
-        tk.Label(meta_card, textvariable=self._album_name_var,
-                 bg=styles.BG_CARD, fg=styles.FG_PRIMARY,
-                 font=styles.FONT_TITLE, wraplength=380, anchor="w",
-                 justify="left").pack(anchor="w")
+        tk.Label(meta, textvariable=self._album_name_var,
+                 bg=styles.BG_DARK, fg=styles.FG_PRIMARY,
+                 font=styles.FONT_TITLE, wraplength=400,
+                 anchor="w", justify="left").pack(anchor="w", pady=(2, 0))
 
-        tk.Frame(meta_card, bg=styles.BG_CARD, height=10).pack()  # spacer
+        # Mood description (italic)
+        self._mood_var = tk.StringVar(value="")
+        tk.Label(meta, textvariable=self._mood_var,
+                 bg=styles.BG_DARK, fg=styles.FG_SECONDARY,
+                 font=(styles.FONT_BODY[0], styles.FONT_BODY[1], "italic"),
+                 wraplength=400, anchor="w", justify="left").pack(anchor="w", pady=(4, 6))
 
-        # Metadata rows (artist / year / label / mood / tags)
+        # Metadata rows
         self._meta_vars = {}
-        for display, key in [("Artist", "artist"), ("Year", "year"),
-                              ("Label", "label"),  ("Mood", "mood"), ("Tags", "tags")]:
-            row = tk.Frame(meta_card, bg=styles.BG_CARD)
+        for display, key in [("Artist", "artist"), ("Year", "year"), ("Label", "label")]:
+            row = tk.Frame(meta, bg=styles.BG_DARK)
             row.pack(fill="x", pady=1)
-            tk.Label(row, text=f"{display}:", bg=styles.BG_CARD,
+            tk.Label(row, text=f"{display}:", bg=styles.BG_DARK,
                      fg=styles.FG_SECONDARY, font=styles.FONT_SMALL,
                      width=7, anchor="e").pack(side="left")
             var = tk.StringVar(value="—")
             self._meta_vars[key] = var
-            tk.Label(row, textvariable=var, bg=styles.BG_CARD,
+            tk.Label(row, textvariable=var, bg=styles.BG_DARK,
                      fg=styles.FG_PRIMARY, font=styles.FONT_BODY,
-                     anchor="w", wraplength=340, justify="left").pack(side="left", padx=(6, 0))
+                     anchor="w").pack(side="left", padx=(6, 0))
 
-        # ── Tracklist ───────────────────────────────────────────────────
-        ttk.Label(parent, text="Tracklist", style="Heading.TLabel").pack(anchor="w", pady=(0, 6))
+        # Tags frame (badges)
+        self._tags_frame = tk.Frame(meta, bg=styles.BG_DARK)
+        self._tags_frame.pack(anchor="w", pady=(8, 0))
 
-        # Scrollable container
-        track_outer = ttk.Frame(parent, style="Card.TFrame")
+        # ── Tracklist ──
+        tracklist_header = tk.Frame(parent, bg=styles.BG_DARK)
+        tracklist_header.pack(fill="x", pady=(0, 6))
+        tk.Frame(tracklist_header, bg=styles.ACCENT_GREEN, width=3, height=16).pack(side="left")
+        tk.Label(tracklist_header, text="  Tracklist",
+                 bg=styles.BG_DARK, fg=styles.FG_PRIMARY,
+                 font=styles.FONT_HEADING).pack(side="left")
+
+        track_outer = tk.Frame(parent, bg=styles.BG_PANEL)
         track_outer.pack(fill="both", expand=True)
 
         self._track_canvas = tk.Canvas(
-            track_outer,
-            bg=styles.BG_CARD,
-            highlightthickness=0,
-            bd=0,
-        )
+            track_outer, bg=styles.BG_PANEL,
+            highlightthickness=0, bd=0)
         scrollbar = ttk.Scrollbar(track_outer, orient="vertical",
                                   command=self._track_canvas.yview)
         self._track_canvas.configure(yscrollcommand=scrollbar.set)
@@ -291,32 +365,25 @@ class AlbumApp:
         scrollbar.pack(side="right", fill="y")
         self._track_canvas.pack(side="left", fill="both", expand=True)
 
-        # Inner frame inside canvas
-        self._track_inner = tk.Frame(self._track_canvas, bg=styles.BG_CARD)
+        self._track_inner = tk.Frame(self._track_canvas, bg=styles.BG_PANEL)
         self._track_window = self._track_canvas.create_window(
-            (0, 0), window=self._track_inner, anchor="nw"
-        )
+            (0, 0), window=self._track_inner, anchor="nw")
 
-        # Resize hooks
         self._track_inner.bind("<Configure>", self._on_inner_configure)
         self._track_canvas.bind("<Configure>", self._on_canvas_configure)
-
-        # Mousewheel scrolling (bound only while cursor is inside)
         self._track_canvas.bind("<Enter>", self._bind_mousewheel)
         self._track_canvas.bind("<Leave>", self._unbind_mousewheel)
 
-        # Initial placeholder
         tk.Label(self._track_inner,
                  text="Generate an album to see the tracklist.",
-                 bg=styles.BG_CARD, fg=styles.FG_SECONDARY,
+                 bg=styles.BG_PANEL, fg=styles.FG_SECONDARY,
                  font=styles.FONT_BODY, padx=12, pady=20).pack(anchor="w")
 
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _install_placeholder(self, text_widget: tk.Text, placeholder: str):
-        """Show grey hint text that vanishes when the user starts typing."""
+    def _install_placeholder(self, text_widget, placeholder):
         text_widget.insert("1.0", placeholder)
         text_widget._placeholder = placeholder
 
@@ -334,17 +401,15 @@ class AlbumApp:
         text_widget.bind("<FocusOut>", on_focus_out)
 
     def _on_inner_configure(self, _event=None):
-        """Update canvas scroll region when track rows are added/removed."""
         self._track_canvas.configure(scrollregion=self._track_canvas.bbox("all"))
 
     def _on_canvas_configure(self, event):
-        """Stretch the inner frame to fill the canvas width."""
         self._track_canvas.itemconfig(self._track_window, width=event.width)
 
     def _bind_mousewheel(self, _event):
-        self._track_canvas.bind_all("<MouseWheel>",       self._on_mousewheel)
-        self._track_canvas.bind_all("<Button-4>",         self._on_mousewheel)  # Linux scroll up
-        self._track_canvas.bind_all("<Button-5>",         self._on_mousewheel)  # Linux scroll down
+        self._track_canvas.bind_all("<MouseWheel>", self._on_mousewheel)
+        self._track_canvas.bind_all("<Button-4>",   self._on_mousewheel)
+        self._track_canvas.bind_all("<Button-5>",   self._on_mousewheel)
 
     def _unbind_mousewheel(self, _event):
         self._track_canvas.unbind_all("<MouseWheel>")
@@ -352,122 +417,134 @@ class AlbumApp:
         self._track_canvas.unbind_all("<Button-5>")
 
     def _on_mousewheel(self, event):
-        """Cross-platform mousewheel scrolling for the tracklist."""
-        if event.num == 4:      # Linux scroll up
+        if event.num == 4:
             self._track_canvas.yview_scroll(-1, "units")
-        elif event.num == 5:    # Linux scroll down
+        elif event.num == 5:
             self._track_canvas.yview_scroll(1, "units")
-        else:                   # macOS / Windows
+        else:
             self._track_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
 
     def _clear_tracklist(self):
-        """Destroy all existing track rows."""
         for widget in self._track_inner.winfo_children():
             widget.destroy()
         self._track_widgets.clear()
 
-    def _add_track_row(self, index: int, title: str, artist: str, on_listen=None):
-        """Append one track row to the scrollable list."""
-        # Alternate row shading for readability
-        bg = styles.BG_CARD if index % 2 == 0 else styles.BG_PANEL
+    def _add_track_row(self, index, title, artist, on_listen=None):
+        bg = styles.BG_PANEL if index % 2 == 0 else styles.BG_DARK
 
-        row = tk.Frame(self._track_inner, bg=bg, pady=5, padx=10)
+        row = tk.Frame(self._track_inner, bg=bg, pady=6, padx=12)
         row.pack(fill="x")
 
-        # Track number
         tk.Label(row, text=f"{index:02d}.", bg=bg,
                  fg=styles.FG_SECONDARY, font=styles.FONT_SMALL,
                  width=3, anchor="e").pack(side="left")
 
-        # Song title + artist (stacked vertically)
         info = tk.Frame(row, bg=bg)
         info.pack(side="left", fill="x", expand=True, padx=(10, 0))
         tk.Label(info, text=title,  bg=bg, fg=styles.FG_PRIMARY,
-                 font=styles.FONT_BODY,  anchor="w").pack(anchor="w")
+                 font=styles.FONT_BODY, anchor="w").pack(anchor="w")
         tk.Label(info, text=artist, bg=bg, fg=styles.FG_SECONDARY,
                  font=styles.FONT_SMALL, anchor="w").pack(anchor="w")
 
-        # Listen button
-        listen_cmd = on_listen if on_listen else lambda: None
-        ttk.Button(row, text="▶  Listen", style="Listen.TButton",
-                   command=listen_cmd).pack(side="right")
+        listen_cmd = (lambda u: lambda: webbrowser.open(u))(on_listen) if on_listen else lambda: None
+        RoundedButton(row, text="▶  Listen",
+                      bg=styles.ACCENT_GREEN_HOVER,
+                      fg=styles.ACCENT_GREEN,
+                      hover_bg=styles.BG_CARD,
+                      font=styles.FONT_SMALL,
+                      radius=12, padx=12, pady=4,
+                      master_bg=bg,
+                      command=listen_cmd).pack(side="right")
 
         self._track_widgets.append(row)
+
+    def _update_tags(self, tags):
+        """Render tag badges in the tags frame."""
+        for widget in self._tags_frame.winfo_children():
+            widget.destroy()
+        if isinstance(tags, list):
+            tag_list = tags
+        else:
+            tag_list = [t.strip() for t in str(tags).split(",") if t.strip()]
+        for tag in tag_list:
+            tk.Label(self._tags_frame,
+                     text=f"#{tag}",
+                     bg=styles.ACCENT_GREEN_HOVER,
+                     fg=styles.ACCENT_GREEN,
+                     font=styles.FONT_SMALL,
+                     padx=8, pady=2,
+                     relief="flat").pack(side="left", padx=(0, 4))
 
     # ------------------------------------------------------------------
     # Teammate connection point
     # ------------------------------------------------------------------
 
     def bind_generate(self, callback):
-        """Connect the Generate button to a handler defined in main.py."""
         self._generate_btn.configure(command=callback)
 
     # ------------------------------------------------------------------
-    # Public API — called by teammates
+    # Public API
     # ------------------------------------------------------------------
 
     def get_journal_text(self) -> str:
-        """Return the user's journal entry, or '' if only the placeholder is shown."""
         text = self._journal_text.get("1.0", "end-1c").strip()
         placeholder = getattr(self._journal_text, "_placeholder", "")
         return "" if text == placeholder else text
 
     def get_genre(self) -> str:
-        """Return the currently selected genre string."""
         return self._genre_var.get()
 
     def get_era(self) -> str:
-        """Return the currently selected era string (e.g. '2000s')."""
         return self._era_var.get()
 
     def get_track_count(self) -> int:
-        """Return the selected number of tracks as an integer."""
         return int(self._track_count_var.get())
 
     def set_status(self, message: str):
-        """Update the status label below the Generate button."""
         self._status_var.set(message)
         self.root.update_idletasks()
 
     def display_album(self, metadata: dict, tracks: list, image=None):
-        """
-        Populate the right panel with generated album data.
-
-        Args:
-            metadata: dict — expected keys: name, artist, year, label, mood, tags
-            tracks:   list of dicts — expected keys: title, artist, url (optional)
-            image:    PIL.Image.Image object, or None to keep the placeholder
-        """
         # Album name
         self._album_name_var.set(metadata.get("name", "Unknown Album"))
+
+        # Mood (italic description)
+        mood = metadata.get("mood", "")
+        self._mood_var.set(f'"{mood}"' if mood else "")
 
         # Metadata fields
         for key, var in self._meta_vars.items():
             value = metadata.get(key, "")
-            var.set(str(value) if value else "—")
+            if key == "year":
+                count = len(tracks)
+                var.set(f"{value} • {count} songs" if value else f"{count} songs")
+            else:
+                var.set(str(value) if value else "—")
+
+        # Tags as badges
+        self._update_tags(metadata.get("tags", []))
 
         # Cover image
         if image is not None:
             try:
                 from PIL import ImageTk
-                photo = ImageTk.PhotoImage(image)
+                img_resized = image.resize((160, 160))
+                photo = ImageTk.PhotoImage(img_resized)
                 self._cover_label.configure(image=photo, text="", width=0, height=0)
-                self._current_image = photo   # Keep reference — prevents garbage collection
+                self._current_image = photo
             except Exception:
                 self._cover_label.configure(text="[Image unavailable]")
 
-        # Rebuild tracklist
+        # Tracklist
         self._clear_tracklist()
         for i, track in enumerate(tracks, start=1):
             title  = track.get("title", "Unknown Title")
             artist = track.get("artist", "")
             url    = track.get("url", None)
-            # Build a closure so each button captures its own URL
-            on_listen = (lambda u: lambda: webbrowser.open(u))(url) if url else None
-            self._add_track_row(i, title, artist, on_listen)
+            self._add_track_row(i, title, artist, url)
 
         if not tracks:
             tk.Label(self._track_inner,
                      text="No tracks found for this combination.",
-                     bg=styles.BG_CARD, fg=styles.FG_SECONDARY,
+                     bg=styles.BG_PANEL, fg=styles.FG_SECONDARY,
                      font=styles.FONT_BODY, padx=12, pady=20).pack(anchor="w")
