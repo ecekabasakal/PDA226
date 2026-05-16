@@ -1,0 +1,92 @@
+import threading
+from tkinter import filedialog, messagebox
+from PIL import ImageTk, Image
+
+# Sizin yazdığınız servisleri dahil ediyoruz
+from image_service import generate_cover
+from export_service import export_album_data
+
+class AlbumAppController:
+    """
+    Projenin mantıksal akışını ve 4. kişinin threading/export görevlerini 
+    GUI ile birleştiren entegrasyon yapısı.
+    """
+    def __init__(self, app_gui, gemini_service, lastfm_service):
+        self.gui = app_gui
+        self.gemini_service = gemini_service
+        self.lastfm_service = lastfm_service
+        
+        # GUI'deki oluştur butonu tetiklendiğinde çalışacak fonksiyonu bağlıyoruz
+        self.gui.bind_generate(self.handle_generation)
+        
+        # Sizin göreviniz olan saklanan veriler
+        self.current_pil_image = None
+        self.current_metadata = None
+        self.current_tracklist = None
+
+    def handle_generation(self):
+        """ 'Generate Album' butonuna basıldığında çağrılır """
+        self.gui.set_status("Generating album data & artwork...")
+        
+        # REQUIREMENT 9: Ağı kilitlememek için arka plan thread'i başlatma
+        bg_thread = threading.Thread(target=self.async_network_task)
+        bg_thread.start()
+
+    def async_network_task(self):
+        try:
+            # 1. Kullanıcı girdilerini GUI'den alıyoruz (1. Kişinin sağladığı API'lar)
+            journal_text = self.gui.get_journal_text()
+            genre = self.gui.get_genre()
+            era = self.gui.get_era()
+            track_count = self.gui.get_track_count()
+
+            # 2. Gemini servisinden meta-verileri çekiyoruz (2. Kişinin görevi)
+            self.current_metadata = self.gemini_service.generate_album_metadata(
+                journal_text, genre, era, track_count
+            )
+            
+            # 3. Last.fm servisinden parça listesini çekiyoruz (3. Kişinin görevi)
+            tags = self.current_metadata.get("lastfm_tags", [genre.lower()])
+            self.current_tracklist = self.lastfm_service.generate_tracklist(tags, track_count)
+
+            # 4. SİZİN GÖREVİNİZ: Pollinations.ai'den görseli çekme (Requirement 6)
+            cover_prompt = self.current_metadata.get("cover_prompt", "Abstract music album cover")
+            self.current_pil_image = generate_cover(cover_prompt, genre)
+
+            # 5. Sonuçları Ekrana Basma (Thread-safe güncelleme)
+            # 1. Kişinin yazdığı app.display_album(metadata, tracks, image) fonksiyonunu çağırıyoruz
+            self.gui.display_album(self.current_metadata, self.current_tracklist, self.current_pil_image)
+            self.gui.set_status("Album generation complete!")
+
+        except Exception as e:
+            messagebox.showerror("Uygulama Hatası", f"İşlem sırasında bir hata oluştu: {e}")
+            self.gui.set_status("Generation failed.")
+
+    def handle_export(self):
+        """ Kullanıcı 'Export' veya 'Save' butonuna bastığında çalışacak fonksiyon """
+        if self.current_pil_image is None or self.current_metadata is None:
+            messagebox.showwarning("Uyarı", "Lütfen önce bir albüm oluşturun!")
+            return
+
+        # Save dialog sistemini açıyoruz (Requirement 8)
+        folder_selected = filedialog.askdirectory(title="Albümün Kaydedileceği Klasörü Seçin")
+        
+        if folder_selected:
+            try:
+                album_name = self.current_metadata.get("album_name", "Untitled_Album")
+                
+                # Export servisimizi çağırıyoruz
+                json_p, png_p = export_album_data(
+                    folder_path=folder_selected,
+                    album_name=album_name,
+                    metadata=self.current_metadata,
+                    tracklist=self.current_tracklist,
+                    cover_image=self.current_pil_image
+                )
+                
+                messagebox.showinfo(
+                    "Başarılı", 
+                    f"Albüm başarıyla dışa aktarıldı!\n\nJSON: {os.path.basename(json_p)}\nPNG: {os.path.basename(png_p)}"
+                )
+            except Exception as e:
+                messagebox.showerror("Dışa Aktarım Hatası", f"Dosyalar kaydedilirken hata oluştu: {e}")
