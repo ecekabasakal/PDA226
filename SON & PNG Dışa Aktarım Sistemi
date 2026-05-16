@@ -1,0 +1,37 @@
+import json
+import os
+from PIL import Image
+
+def export_album_data(folder_path, album_name, metadata, tracklist, cover_image):
+    """
+    Albüm meta verilerini ve Last.fm şarkı listesini tek bir JSON; 
+    albüm kapağını ise PNG olarak kullanıcının seçtiği klasöre kaydeder.
+    """
+    if not os.path.exists(folder_path):
+        raise FileNotFoundError("Seçilen klasör bulunamadı.")
+        
+    # Dosya ismi için geçersiz karakterleri temizleme (Sanitizations)
+    safe_name = "".join([c for c in album_name if c.isalpha() or c.isdigit() or c in ' _-']).rstrip()
+    if not safe_name:
+        safe_name = "album"
+        
+    json_path = os.path.join(folder_path, f"{safe_name}_metadata.json")
+    png_path = os.path.join(folder_path, f"{safe_name}_cover.png")
+    
+    # 1. JSON Export Verisi Hazırlama (Requirement 8)
+    export_payload = {
+        "metadata": metadata,  # Gemini'den dönen dict
+        "tracklist": tracklist  # Last.fm'den gelen list
+    }
+    
+    with open(json_path, "w", encoding="utf-8") as json_file:
+        json.dump(export_payload, json_file, indent=4, ensure_ascii=False)
+        
+    # 2. PNG Kapak Resmi Kaydetme (Requirement 8)
+    if isinstance(cover_image, Image.Image):
+        cover_image.save(png_path, "PNG")
+    else:
+        # Eğer henüz PIL formatında bir resim nesnesi yoksa hata fırlatır
+        raise ValueError("Geçersiz imge nesnesi (PIL.Image olmalı).")
+        
+    return json_path, png_path
