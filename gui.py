@@ -365,6 +365,19 @@ class AlbumApp:
                  font=styles.FONT_HEADING).pack(side="left")
 
         _track_container = tk.Canvas(parent, bg=styles.BG_DARK, highlightthickness=0, bd=0)
+
+        # save album button at the bottom
+        self._export_btn = RoundedButton(
+            parent, text="Save Album (JSON + PNG)",
+            bg=styles.ACCENT_GREEN,
+            fg=styles.BG_DARK,
+            hover_bg="#0d9e6e",
+            font=styles.FONT_LABEL,
+            radius=18, padx=20, pady=10,
+            master_bg=styles.BG_DARK,
+        )
+        self._export_btn.pack(side="bottom", fill="x", pady=(12, 0))
+
         _track_container.pack(fill="both", expand=True)
         track_outer = tk.Frame(_track_container, bg=styles.BG_PANEL)
         _tc_win = _track_container.create_window(6, 6, anchor="nw", window=track_outer)
@@ -592,7 +605,8 @@ class AlbumApp:
         if image is not None:
             try:
                 from PIL import ImageTk
-                img_resized = image.resize((160, 160))
+                import image_service
+                img_resized = image_service.resize_for_display(image, (160, 160))
                 photo = ImageTk.PhotoImage(img_resized)
                 self._cover_label.configure(image=photo, text="", width=0, height=0)
                 self._current_image = photo

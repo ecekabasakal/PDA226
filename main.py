@@ -10,7 +10,6 @@ from lastfm_service import LastFmService
 from image_service import generate_cover
 from export_service import export_album_data
 
-# API Anahtarlarının config.py dosyasından güvenli bir şekilde okunması
 try:
     import config
     GEMINI_KEY = getattr(config, "GEMINI_API_KEY", "")
@@ -21,11 +20,6 @@ except ImportError:
 
 
 class ProjectController:
-    """
-    4. KİŞİ ENTEGRASYON SINIFI (Controller)
-    Uygulamanın ana akışını yöneten, servisleri birbirine bağlayan,
-    görsel üretimi (Thread) ve dışa aktarımı (Save Dialog) organize eden sınıf.
-    """
     def __init__(self, root):
         self.root = root
         
@@ -44,15 +38,11 @@ class ProjectController:
             self.app._export_btn.configure(command=self.handle_export)
 
     def start_generation_pipeline(self):
-        """ 'Generate Album' butonuna tıklandığında tetiklenir """
         self.app.set_status("Analyzing input & initializing pipeline...")
-        
-        
         worker_thread = threading.Thread(target=self.async_network_operations)
         worker_thread.start()
 
     def async_network_operations(self):
-        """ Arka planda çalışan, GUI'yi dondurmayan network fonksiyonu """
         try:
             journal = self.app.get_journal_text()
             genre = self.app.get_genre()
@@ -73,13 +63,14 @@ class ProjectController:
                 raise Exception("Gemini API veri üretemedi.")
 
             self.app.set_status("Fetching synchronized tracklist from Last.fm...")
-            tags = self.current_metadata.get("lastfm_tags", [genre.lower()])
+            gemini_tags = self.current_metadata.get("lastfm_tags", [])
+            tags = gemini_tags + [genre.lower()]
             self.current_tracklist = self.lastfm_service.generate_tracklist(tags, track_count)
 
             self.app.set_status("Synthesizing AI cover artwork...")
             cover_prompt = self.current_metadata.get("cover_prompt", "Album cover art")
             
-            self.current_pil_image = generate_cover(cover_prompt, genre)
+            self.current_pil_image = generate_cover(cover_prompt, genre, status_callback=self.app.set_status)
 
             self.app.display_album(
                 metadata=self.current_metadata,
@@ -93,7 +84,6 @@ class ProjectController:
             self.app.set_status("Generation failed.")
 
     def handle_export(self):
-        """ 'Export to Folder' butonuna basıldığında çalışan Save Dialog sisteminiz (Requirement 8) """
         if not self.current_pil_image or not self.current_metadata:
             messagebox.showwarning("Dışa Aktarım Uyarısı", "Lütfen önce albüm verisi ve kapak resmi üretin!")
             return
@@ -109,7 +99,8 @@ class ProjectController:
                     album_name=album_title,
                     metadata=self.current_metadata,
                     tracklist=self.current_tracklist,
-                    cover_image=self.current_pil_image
+                    cover_image=self.current_pil_image,
+                    status_callback=self.app.set_status,
                 )
                 
                 messagebox.showinfo(
