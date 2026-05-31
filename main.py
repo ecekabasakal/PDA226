@@ -9,13 +9,8 @@ from image_service import generate_cover
 from export_service import export_album_data
 from thread_manager import ThreadManager
 
-try:
-    import config
-    GEMINI_KEY = getattr(config, "GEMINI_API_KEY", "")
-    LASTFM_KEY = getattr(config, "LASTFM_API_KEY", "")
-except ImportError:
-    GEMINI_KEY = "YOUR_GEMINI_API_KEY"
-    LASTFM_KEY = "YOUR_LASTFM_API_KEY"
+GEMINI_KEY = "AIzaSyAp0oDRXWZUTwWIAsLrIjrC1ujb-7Uja_M"
+LASTFM_KEY = "d63415de4fe8af0899d5165e484f2132"
 
 
 class ProjectController:

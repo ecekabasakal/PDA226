@@ -1,2 +1,0 @@
-# PDA226
-SE226 Spring 2025-2026 Project
